@@ -76,16 +76,16 @@ with col2:
         }).dropna()
 
         # Calcoli
-        # NUOVO CODICE - rendimenti giornalieri
-data["nasdaq_ret"] = data["nasdaq"].pct_change()
-data["sp500_ret"] = data["sp500"].pct_change()
-data["spread"] = data["nasdaq_ret"] - data["sp500_ret"]
-
+       # NUOVO CODICE - rendimenti giornalieri
+        data["nasdaq_ret"] = data["nasdaq"].pct_change()
+        data["sp500_ret"] = data["sp500"].pct_change()
+        data["spread"] = data["nasdaq_ret"] - data["sp500_ret"]
+        data = data.dropna()  # pct_change genera un NaN alla prima riga, va rimosso
+        
         window = 60
         data["mean"] = data["spread"].rolling(window).mean()
         data["std"] = data["spread"].rolling(window).std()
         data["zscore"] = (data["spread"] - data["mean"]) / data["std"]
-
         ultimo_zscore = data["zscore"].iloc[-1]
         
         # Mostra lo Z-Score con colore dinamico
