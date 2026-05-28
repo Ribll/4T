@@ -76,9 +76,10 @@ with col2:
         }).dropna()
 
         # Calcoli
-        data["nasdaq_norm"] = data["nasdaq"] / data["nasdaq"].iloc[0]
-        data["sp500_norm"] = data["sp500"] / data["sp500"].iloc[0]
-        data["spread"] = data["nasdaq_norm"] - data["sp500_norm"]
+        # NUOVO CODICE - rendimenti giornalieri
+data["nasdaq_ret"] = data["nasdaq"].pct_change()
+data["sp500_ret"] = data["sp500"].pct_change()
+data["spread"] = data["nasdaq_ret"] - data["sp500_ret"]
 
         window = 60
         data["mean"] = data["spread"].rolling(window).mean()
