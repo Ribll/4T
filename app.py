@@ -81,6 +81,17 @@ with col2:
         data["sp500_ret"] = data["sp500"].pct_change()
         data["spread"] = data["nasdaq_ret"] - data["sp500_ret"]
         data = data.dropna()  # pct_change genera un NaN alla prima riga, va rimosso
+
+        # SLIDER SOGLIA - interattivo
+        soglia = st.slider(
+            "Soglia Z-Score per i segnali",
+            min_value=1.0,
+            max_value=4.0,
+            value=2.0,      # valore di partenza
+            step=0.1,
+            help="Sposta il cursore per cambiare la soglia. Valori consigliati: tra 1.5 e 3.0"
+        )
+
         
         window = 60
         data["mean"] = data["spread"].rolling(window).mean()
@@ -144,13 +155,13 @@ with col2:
         
         st.subheader("📝 Registro Operazioni (Log)")
         
-        if ultimo_zscore > 2 and not ha_nasdaq:
+        if ultimo_zscore > soglia and not ha_nasdaq:
             st.warning("Esecuzione: Segnale SHORT SPREAD. Invio ordini...")
             trading_client.submit_order(MarketOrderRequest(symbol="SPY", qty=10, side=OrderSide.BUY, time_in_force=TimeInForce.DAY))
             trading_client.submit_order(MarketOrderRequest(symbol="QQQ", qty=10, side=OrderSide.SELL, time_in_force=TimeInForce.DAY))
             st.success("Ordini inviati con successo!")
             
-        elif ultimo_zscore < -2 and not ha_nasdaq:
+        elif ultimo_zscore < -soglia and not ha_nasdaq:
             st.warning("Esecuzione: Segnale LONG SPREAD. Invio ordini...")
             trading_client.submit_order(MarketOrderRequest(symbol="QQQ", qty=10, side=OrderSide.BUY, time_in_force=TimeInForce.DAY))
             trading_client.submit_order(MarketOrderRequest(symbol="SPY", qty=10, side=OrderSide.SELL, time_in_force=TimeInForce.DAY))
