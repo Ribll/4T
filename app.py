@@ -9,12 +9,25 @@ from alpaca.trading.enums import OrderSide, TimeInForce
 st.set_page_config(page_title="Trading Desk - Pair Trading", layout="wide")
 st.title("📊 Trading Desk - Sistema Automatico Z-Score")
 
-# Recuperiamo le chiavi in modo sicuro dai segreti del Cloud
-try:
-    API_KEY = st.secrets["PKDGFYR2QIQW2767NNVOVONLFG"]
-    SECRET_KEY = st.secrets["HCGTNyH78ZVvHW19YPuwT1VHZcnsDmcgfP6UFHHQp6fa"]
-except:
-    st.error("⚠️ Chiavi API non configurate nei Secrets di Streamlit!")
+# =========================================================
+# RECUPERO CHIAVI API (SISTEMA ROBUSTO MULTI-METODO)
+# =========================================================
+API_KEY = None
+SECRET_KEY = None
+
+# Metodo 1: Lettura standard da dizionario st.secrets
+if "ALPACA_API_KEY" in st.secrets:
+    API_KEY = st.secrets["ALPACA_API_KEY"]
+    SECRET_KEY = st.secrets["ALPACA_SECRET_KEY"]
+# Metodo 2: Lettura da sotto-sezione (eredità TOML)
+elif hasattr(st.secrets, "secrets") and "ALPACA_API_KEY" in st.secrets.secrets:
+    API_KEY = st.secrets.secrets["ALPACA_API_KEY"]
+    SECRET_KEY = st.secrets.secrets["ALPACA_SECRET_KEY"]
+
+# Se non ha trovato nulla, stampiamo un debug per capire cosa vede Streamlit
+if not API_KEY or not SECRET_KEY:
+    st.error("⚠️ Chiavi API non trovate nei Secrets!")
+    st.write("Chiavi rilevate attualmente nel pannello Streamlit:", list(st.secrets.keys()))
     st.stop()
 
 # Connessione ad Alpaca
