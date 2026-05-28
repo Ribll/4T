@@ -67,8 +67,8 @@ with col2:
         st.write("Scaricamento dati in corso...")
         
         # Scarica dati
-        nasdaq = yf.download("^NDX", period="500d", progress=False, auto_adjust=True)
-        sp500 = yf.download("^GSPC", period="500d", progress=False, auto_adjust=True)
+        nasdaq = yf.download("^NDX", period="2000d", progress=False, auto_adjust=True)
+        sp500 = yf.download("^GSPC", period="2000d", progress=False, auto_adjust=True)
 
         data = pd.DataFrame({
             "nasdaq": nasdaq["Close"].iloc[:, 0] if isinstance(nasdaq["Close"], pd.DataFrame) else nasdaq["Close"],
