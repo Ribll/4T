@@ -48,7 +48,7 @@ with col1:
         account = trading_client.get_account()
         st.metric(label="Saldo Totale (Paper)", value=f"${float(account.equity):,.2f}")
         st.metric(label="Potere d'Acquisto", value=f"${float(account.buying_power):,.2f}")
-        
+
         st.subheader("Posizioni Attive")
         posizioni = trading_client.get_all_positions()
         if posizioni:
@@ -131,10 +131,12 @@ with col2:
         with col_d4:
             st.metric("Deviazione Std Z", f"{data['zscore'].std():.2f}")
 
-        # Conteggio segnali storici
+        # Conteggio segnali storici con frequenza proporzionale
+        giorni_analizzati = len(data)
         segnali_long = (data["zscore"] < -soglia).sum()
         segnali_short = (data["zscore"] > soglia).sum()
         totale_segnali = segnali_long + segnali_short
+        segnali_per_100_giorni = (totale_segnali / giorni_analizzati) * 100
 
         col_s1, col_s2, col_s3 = st.columns(3)
         with col_s1:
@@ -142,16 +144,17 @@ with col2:
         with col_s2:
             st.metric("🟢 Segnali LONG (QQQ)", segnali_long)
         with col_s3:
-            color = "normale" if totale_segnali <= 10 else "troppi segnali ⚠️"
-            st.metric("Totale Segnali", totale_segnali, delta=color)
+            st.metric("📊 Frequenza", f"{segnali_per_100_giorni:.1f} ogni 100gg")
 
         st.divider()
-        if totale_segnali > 15:
-            st.warning(f"⚠️ Soglia ±{soglia} troppo bassa: {totale_segnali} segnali in {len(data)} giorni. Prova ±2.5 o ±3.0")
-        elif totale_segnali < 3:
-            st.warning(f"⚠️ Soglia ±{soglia} troppo alta: solo {totale_segnali} segnali in {len(data)} giorni. Prova ±1.5")
+        st.caption(f"Periodo analizzato: {giorni_analizzati} giorni | Segnali totali: {totale_segnali} | Frequenza: {segnali_per_100_giorni:.1f} ogni 100 giorni")
+
+        if segnali_per_100_giorni > 8:
+            st.warning(f"⚠️ Soglia ±{soglia} troppo bassa: {segnali_per_100_giorni:.1f} segnali ogni 100 giorni. Il sistema scatta troppo spesso. Prova ad alzare la soglia.")
+        elif segnali_per_100_giorni < 1:
+            st.warning(f"⚠️ Soglia ±{soglia} troppo alta: {segnali_per_100_giorni:.1f} segnali ogni 100 giorni. Il sistema non scatta quasi mai. Prova ad abbassare la soglia.")
         else:
-            st.success(f"✅ Soglia ±{soglia} nella norma: {totale_segnali} segnali in {len(data)} giorni.")
+            st.success(f"✅ Soglia ±{soglia} nella norma: {segnali_per_100_giorni:.1f} segnali ogni 100 giorni. Frequenza ragionevole.")
 
         # ----------------------------------------
         # LOGICA ORDINI
