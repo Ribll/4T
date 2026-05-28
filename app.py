@@ -96,6 +96,46 @@ with col2:
 
         # Mostra il grafico dello Z-Score
         st.line_chart(data["zscore"])
+
+        # ----------------------------------------
+        # PANNELLO DIAGNOSTICA Z-SCORE
+        # ----------------------------------------
+        st.subheader("🔬 Diagnostica Z-Score")
+        
+        col_d1, col_d2, col_d3, col_d4 = st.columns(4)
+        
+        with col_d1:
+            st.metric("Z-Score Attuale", f"{ultimo_zscore:.2f}")
+        with col_d2:
+            st.metric("Massimo (periodo)", f"{data['zscore'].max():.2f}")
+        with col_d3:
+            st.metric("Minimo (periodo)", f"{data['zscore'].min():.2f}")
+        with col_d4:
+            st.metric("Deviazione Std Z", f"{data['zscore'].std():.2f}")
+
+        # Conteggio segnali
+        soglia = 2.0  # cambia qui se vuoi testare soglie diverse
+        segnali_long = (data["zscore"] < -soglia).sum()
+        segnali_short = (data["zscore"] > soglia).sum()
+        totale_segnali = segnali_long + segnali_short
+        
+        col_s1, col_s2, col_s3 = st.columns(3)
+        with col_s1:
+            st.metric("🔴 Segnali SHORT (QQQ)", segnali_short)
+        with col_s2:
+            st.metric("🟢 Segnali LONG (QQQ)", segnali_long)
+        with col_s3:
+            color = "normale" if totale_segnali <= 10 else "troppi segnali ⚠️"
+            st.metric("Totale Segnali", totale_segnali, delta=color)
+
+        # Giudizio automatico sulla soglia
+        st.divider()
+        if totale_segnali > 15:
+            st.warning(f"⚠️ Soglia ±{soglia} troppo bassa: {totale_segnali} segnali in {len(data)} giorni. Prova ±2.5 o ±3.0")
+        elif totale_segnali < 3:
+            st.warning(f"⚠️ Soglia ±{soglia} troppo alta: solo {totale_segnali} segnali in {len(data)} giorni. Prova ±1.5")
+        else:
+            st.success(f"✅ Soglia ±{soglia} nella norma: {totale_segnali} segnali in {len(data)} giorni.")
         
         # ----------------------------------------
         # LOGICA DI CONTROLLO E ORDINI
