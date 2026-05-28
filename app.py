@@ -1,6 +1,7 @@
 import streamlit as st
 import yfinance as yf
 import pandas as pd
+import numpy as np
 from alpaca.trading.client import TradingClient
 from alpaca.trading.requests import MarketOrderRequest
 from alpaca.trading.enums import OrderSide, TimeInForce
@@ -155,6 +156,92 @@ with col2:
             st.warning(f"⚠️ Soglia ±{soglia} troppo alta: {segnali_per_100_giorni:.1f} segnali ogni 100 giorni. Il sistema non scatta quasi mai. Prova ad abbassare la soglia.")
         else:
             st.success(f"✅ Soglia ±{soglia} nella norma: {segnali_per_100_giorni:.1f} segnali ogni 100 giorni. Frequenza ragionevole.")
+
+        # ----------------------------------------
+        # BACKTEST
+        # ----------------------------------------
+        st.subheader("🧪 Backtest Storico")
+        st.caption("Per ogni segnale passato, verifica se lo z-score è tornato in zona neutra entro 30 giorni.")
+
+        zscore_values = data["zscore"].values
+        date_index = data.index
+        max_giorni_attesa = 30
+        soglia_uscita = 0.5
+
+        risultati = []
+        i = 0
+        while i < len(zscore_values) - max_giorni_attesa:
+            z = zscore_values[i]
+
+            # Rilevazione segnale
+            if z > soglia:
+                tipo = "SHORT (vendi QQQ)"
+            elif z < -soglia:
+                tipo = "LONG (compra QQQ)"
+            else:
+                i += 1
+                continue
+
+            # Cerca uscita nei 30 giorni successivi
+            uscita_trovata = False
+            giorni_impiegati = None
+            for j in range(1, max_giorni_attesa + 1):
+                if abs(zscore_values[i + j]) < soglia_uscita:
+                    uscita_trovata = True
+                    giorni_impiegati = j
+                    break
+
+            risultati.append({
+                "Data segnale": date_index[i].strftime("%Y-%m-%d"),
+                "Tipo": tipo,
+                "Z-Score ingresso": round(z, 2),
+                "Esito": "✅ Vincente" if uscita_trovata else "❌ Perdente",
+                "Giorni al ritorno": giorni_impiegati if uscita_trovata else f">{max_giorni_attesa}"
+            })
+
+            # Salta i giorni successivi per evitare di contare lo stesso trade più volte
+            i += giorni_impiegati if uscita_trovata else max_giorni_attesa
+
+        # ----------------------------------------
+        # RIEPILOGO BACKTEST
+        # ----------------------------------------
+        if risultati:
+            df_risultati = pd.DataFrame(risultati)
+
+            vincenti = (df_risultati["Esito"] == "✅ Vincente").sum()
+            perdenti = (df_risultati["Esito"] == "❌ Perdente").sum()
+            totale = len(df_risultati)
+            tasso_successo = (vincenti / totale) * 100
+
+            durate_vincenti = df_risultati[df_risultati["Esito"] == "✅ Vincente"]["Giorni al ritorno"]
+            durata_media = durate_vincenti.mean() if len(durate_vincenti) > 0 else 0
+
+            col_b1, col_b2, col_b3, col_b4 = st.columns(4)
+            with col_b1:
+                st.metric("Trade Totali", totale)
+            with col_b2:
+                st.metric("✅ Vincenti", vincenti)
+            with col_b3:
+                st.metric("❌ Perdenti", perdenti)
+            with col_b4:
+                st.metric("🎯 Tasso Successo", f"{tasso_successo:.1f}%")
+
+            st.metric("⏱️ Durata Media Trade Vincente", f"{durata_media:.1f} giorni")
+
+            # Giudizio sul tasso di successo
+            st.divider()
+            if tasso_successo >= 60:
+                st.success(f"✅ Strategia storicamente solida: {tasso_successo:.1f}% dei trade ha raggiunto il target entro {max_giorni_attesa} giorni.")
+            elif tasso_successo >= 45:
+                st.warning(f"⚠️ Strategia nella media: {tasso_successo:.1f}% di successo. Considera di alzare la soglia per segnali più selettivi.")
+            else:
+                st.error(f"🔴 Strategia debole: solo {tasso_successo:.1f}% di successo. La soglia attuale genera troppi falsi segnali.")
+
+            # Tabella dettaglio trade
+            with st.expander("📋 Dettaglio tutti i trade storici"):
+                st.dataframe(df_risultati, use_container_width=True)
+        else:
+            st.info("Nessun segnale trovato nel periodo analizzato con la soglia attuale.")
 
         # ----------------------------------------
         # LOGICA ORDINI
