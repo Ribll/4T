@@ -132,7 +132,6 @@ with col2:
         with col_d4:
             st.metric("Deviazione Std Z", f"{data['zscore'].std():.2f}")
 
-        # Conteggio segnali storici con frequenza proporzionale
         giorni_analizzati = len(data)
         segnali_long = (data["zscore"] < -soglia).sum()
         segnali_short = (data["zscore"] > soglia).sum()
@@ -151,26 +150,25 @@ with col2:
         st.caption(f"Periodo analizzato: {giorni_analizzati} giorni | Segnali totali: {totale_segnali} | Frequenza: {segnali_per_100_giorni:.1f} ogni 100 giorni")
 
         if segnali_per_100_giorni > 8:
-            st.warning(f"⚠️ Soglia ±{soglia} troppo bassa: {segnali_per_100_giorni:.1f} segnali ogni 100 giorni. Il sistema scatta troppo spesso. Prova ad alzare la soglia.")
+            st.warning(f"⚠️ Soglia ±{soglia} troppo bassa: {segnali_per_100_giorni:.1f} segnali ogni 100 giorni. Prova ad alzare la soglia.")
         elif segnali_per_100_giorni < 1:
-            st.warning(f"⚠️ Soglia ±{soglia} troppo alta: {segnali_per_100_giorni:.1f} segnali ogni 100 giorni. Il sistema non scatta quasi mai. Prova ad abbassare la soglia.")
+            st.warning(f"⚠️ Soglia ±{soglia} troppo alta: {segnali_per_100_giorni:.1f} segnali ogni 100 giorni. Prova ad abbassare la soglia.")
         else:
-            st.success(f"✅ Soglia ±{soglia} nella norma: {segnali_per_100_giorni:.1f} segnali ogni 100 giorni. Frequenza ragionevole.")
+            st.success(f"✅ Soglia ±{soglia} nella norma: {segnali_per_100_giorni:.1f} segnali ogni 100 giorni.")
 
         # ----------------------------------------
-        # BACKTEST
+        # BACKTEST SENZA LIMITE DI TEMPO
         # ----------------------------------------
         st.subheader("🧪 Backtest Storico")
-        st.caption("Per ogni segnale passato, verifica se lo z-score è tornato in zona neutra entro 30 giorni.")
+        st.caption("Per ogni segnale passato, misura il tempo reale impiegato dallo z-score a tornare in zona neutra, senza limiti artificiali.")
 
         zscore_values = data["zscore"].values
         date_index = data.index
-        max_giorni_attesa = 30
         soglia_uscita = 0.5
 
         risultati = []
         i = 0
-        while i < len(zscore_values) - max_giorni_attesa:
+        while i < len(zscore_values):
             z = zscore_values[i]
 
             # Rilevazione segnale
@@ -182,10 +180,10 @@ with col2:
                 i += 1
                 continue
 
-            # Cerca uscita nei 30 giorni successivi
+            # Cerca uscita senza limite di tempo
             uscita_trovata = False
             giorni_impiegati = None
-            for j in range(1, max_giorni_attesa + 1):
+            for j in range(1, len(zscore_values) - i):
                 if abs(zscore_values[i + j]) < soglia_uscita:
                     uscita_trovata = True
                     giorni_impiegati = j
@@ -195,12 +193,12 @@ with col2:
                 "Data segnale": date_index[i].strftime("%Y-%m-%d"),
                 "Tipo": tipo,
                 "Z-Score ingresso": round(z, 2),
-                "Esito": "✅ Vincente" if uscita_trovata else "❌ Perdente",
-                "Giorni al ritorno": giorni_impiegati if uscita_trovata else f">{max_giorni_attesa}"
+                "Esito": "✅ Tornato" if uscita_trovata else "⏳ Non ancora tornato",
+                "Giorni al ritorno": giorni_impiegati if uscita_trovata else "ancora aperto"
             })
 
-            # Salta i giorni successivi per evitare di contare lo stesso trade più volte
-            i += giorni_impiegati if uscita_trovata else max_giorni_attesa
+            # Salta al giorno dopo l'uscita per evitare duplicati
+            i += giorni_impiegati if uscita_trovata else len(zscore_values) - i
 
         # ----------------------------------------
         # RIEPILOGO BACKTEST
@@ -208,38 +206,72 @@ with col2:
         if risultati:
             df_risultati = pd.DataFrame(risultati)
 
-            vincenti = (df_risultati["Esito"] == "✅ Vincente").sum()
-            perdenti = (df_risultati["Esito"] == "❌ Perdente").sum()
-            totale = len(df_risultati)
-            tasso_successo = (vincenti / totale) * 100
+            tornati = (df_risultati["Esito"] == "✅ Tornato").sum()
+            ancora_aperti = (df_risultati["Esito"] == "⏳ Non ancora tornato").sum()
+            totale_trade = len(df_risultati)
 
-            durate_vincenti = df_risultati[df_risultati["Esito"] == "✅ Vincente"]["Giorni al ritorno"]
-            durata_media = durate_vincenti.mean() if len(durate_vincenti) > 0 else 0
+            # Durata media calcolata dai dati reali
+            durate_reali = df_risultati[df_risultati["Esito"] == "✅ Tornato"]["Giorni al ritorno"]
+            durata_media = durate_reali.mean() if len(durate_reali) > 0 else 0
+            durata_mediana = durate_reali.median() if len(durate_reali) > 0 else 0
+            durata_massima = durate_reali.max() if len(durate_reali) > 0 else 0
 
             col_b1, col_b2, col_b3, col_b4 = st.columns(4)
             with col_b1:
-                st.metric("Trade Totali", totale)
+                st.metric("Trade Totali", totale_trade)
             with col_b2:
-                st.metric("✅ Vincenti", vincenti)
+                st.metric("✅ Tornati in zona neutra", tornati)
             with col_b3:
-                st.metric("❌ Perdenti", perdenti)
+                st.metric("⏳ Ancora aperti", ancora_aperti)
             with col_b4:
-                st.metric("🎯 Tasso Successo", f"{tasso_successo:.1f}%")
+                tasso = (tornati / totale_trade * 100) if totale_trade > 0 else 0
+                st.metric("% Risolti", f"{tasso:.1f}%")
 
-            st.metric("⏱️ Durata Media Trade Vincente", f"{durata_media:.1f} giorni")
-
-            # Giudizio sul tasso di successo
             st.divider()
-            if tasso_successo >= 60:
-                st.success(f"✅ Strategia storicamente solida: {tasso_successo:.1f}% dei trade ha raggiunto il target entro {max_giorni_attesa} giorni.")
-            elif tasso_successo >= 45:
-                st.warning(f"⚠️ Strategia nella media: {tasso_successo:.1f}% di successo. Considera di alzare la soglia per segnali più selettivi.")
+
+            # Le tre metriche temporali chiave
+            col_t1, col_t2, col_t3 = st.columns(3)
+            with col_t1:
+                st.metric(
+                    "⏱️ Durata Media",
+                    f"{durata_media:.1f} giorni",
+                    help="Media aritmetica dei giorni di ritorno. Sensibile ai casi estremi."
+                )
+            with col_t2:
+                st.metric(
+                    "⏱️ Durata Mediana",
+                    f"{durata_mediana:.1f} giorni",
+                    help="Il valore centrale: metà dei trade si chiude prima, metà dopo. Più robusta della media."
+                )
+            with col_t3:
+                st.metric(
+                    "⏱️ Caso Peggiore",
+                    f"{durata_massima:.0f} giorni",
+                    help="Il trade più lento mai visto storicamente. Utile per sapere il rischio massimo di attesa."
+                )
+
+            # Spiegazione delle metriche
+            st.info(
+                f"📖 **Come leggere questi numeri:** "
+                f"Storicamente, metà dei segnali si è risolta entro **{durata_mediana:.0f} giorni**. "
+                f"In media ci sono voluti **{durata_media:.1f} giorni**. "
+                f"Il caso più lento nella storia analizzata ha impiegato **{durata_massima:.0f} giorni**. "
+                f"Questi numeri emergono dai dati reali, non da parametri arbitrari."
+            )
+
+            # Giudizio sulla strategia
+            st.divider()
+            if tasso >= 90:
+                st.success(f"✅ Lo z-score è tornato in zona neutra nel {tasso:.1f}% dei casi storici. Strategia molto affidabile.")
+            elif tasso >= 70:
+                st.warning(f"⚠️ Lo z-score è tornato in zona neutra nel {tasso:.1f}% dei casi. Strategia discreta, ma con margine di rischio.")
             else:
-                st.error(f"🔴 Strategia debole: solo {tasso_successo:.1f}% di successo. La soglia attuale genera troppi falsi segnali.")
+                st.error(f"🔴 Lo z-score è tornato in zona neutra solo nel {tasso:.1f}% dei casi. Valuta di cambiare soglia o approccio.")
 
             # Tabella dettaglio trade
             with st.expander("📋 Dettaglio tutti i trade storici"):
                 st.dataframe(df_risultati, use_container_width=True)
+
         else:
             st.info("Nessun segnale trovato nel periodo analizzato con la soglia attuale.")
 
