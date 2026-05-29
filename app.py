@@ -80,7 +80,8 @@ with col2:
         st.write("Scaricamento dati in corso...")
 
         # ----------------------------------------
-        # SCARICO DATI
+        # SCARICO DATI — sempre 2000 giorni per
+        # avere analisi e backtest affidabili
         # ----------------------------------------
         qqq_raw = yf.download("QQQ", period="2000d", progress=False, auto_adjust=True)
         spy_raw = yf.download("SPY", period="2000d", progress=False, auto_adjust=True)
@@ -100,7 +101,7 @@ with col2:
         }).dropna()
 
         # ----------------------------------------
-        # CALCOLO Z-SCORE
+        # CALCOLO Z-SCORE SU TUTTI I 2000 GIORNI
         # ----------------------------------------
         data["nasdaq_ret"] = data["nasdaq"].pct_change()
         data["sp500_ret"] = data["sp500"].pct_change()
@@ -123,47 +124,39 @@ with col2:
         else:
             st.success(f"🟢 Z-SCORE ATTUALE: {ultimo_zscore:.2f} (In zona neutra)")
 
-        st.line_chart(data["zscore"])
+        # Grafico Z-Score ultimi 100 giorni
+        st.line_chart(data["zscore"].iloc[-100:])
 
         # ----------------------------------------
         # CRUSCOTTO GRAFICO INDICI SOVRAPPOSTI
+        # Fisso a 100 giorni, senza slider
         # ----------------------------------------
-        st.subheader("📉 Confronto Indici — NASDAQ vs S&P500")
+        st.subheader("📉 Confronto Indici — NASDAQ vs S&P500 (ultimi 100 giorni)")
 
-        giorni_grafico = st.slider(
-            "Numero di giorni da visualizzare",
-            min_value=5,
-            max_value=365,
-            value=30,
-            step=5,
-            help="Modifica quanti giorni di storia vuoi vedere nel grafico sovrapposto"
-        )
+        GIORNI_GRAFICO = 100
+        data_grafico = data[["nasdaq", "sp500"]].iloc[-GIORNI_GRAFICO:].copy()
 
-        # Filtra i dati per il numero di giorni scelto
-        data_grafico = data[["nasdaq", "sp500"]].iloc[-giorni_grafico:].copy()
-
-        # Normalizza entrambi a 100 nel primo giorno del periodo scelto
-        # (solo per il grafico — non influenza lo Z-Score)
+        # Normalizza a 100 nel primo giorno del periodo
         data_grafico["NASDAQ (norm)"] = (data_grafico["nasdaq"] / data_grafico["nasdaq"].iloc[0]) * 100
         data_grafico["S&P500 (norm)"] = (data_grafico["sp500"] / data_grafico["sp500"].iloc[0]) * 100
 
         st.line_chart(data_grafico[["NASDAQ (norm)", "S&P500 (norm)"]])
         st.caption(
-            f"Entrambi gli indici normalizzati a 100 nel primo giorno del periodo ({data_grafico.index[0].strftime('%d/%m/%Y')}). "
-            f"Se NASDAQ è sopra S&P500 lo spread è positivo; se è sotto è negativo. "
-            f"Questo grafico mostra visivamente cosa sta misurando lo Z-Score."
+            f"Entrambi gli indici normalizzati a 100 il {data_grafico.index[0].strftime('%d/%m/%Y')}. "
+            f"Quando la linea NASDAQ è sopra S&P500 lo spread è positivo (Z-Score tende al rialzo); "
+            f"quando è sotto è negativo (Z-Score tende al ribasso)."
         )
 
-        # Mini-metriche di riepilogo del periodo visualizzato
+        # Mini-metriche del periodo
         perf_nasdaq = ((data_grafico["nasdaq"].iloc[-1] / data_grafico["nasdaq"].iloc[0]) - 1) * 100
         perf_sp500 = ((data_grafico["sp500"].iloc[-1] / data_grafico["sp500"].iloc[0]) - 1) * 100
         differenza = perf_nasdaq - perf_sp500
 
         col_g1, col_g2, col_g3 = st.columns(3)
         with col_g1:
-            st.metric(f"NASDAQ ultimi {giorni_grafico}gg", f"{perf_nasdaq:+.2f}%")
+            st.metric("NASDAQ ultimi 100gg", f"{perf_nasdaq:+.2f}%")
         with col_g2:
-            st.metric(f"S&P500 ultimi {giorni_grafico}gg", f"{perf_sp500:+.2f}%")
+            st.metric("S&P500 ultimi 100gg", f"{perf_sp500:+.2f}%")
         with col_g3:
             st.metric(
                 "Differenza di performance",
@@ -173,6 +166,7 @@ with col2:
 
         # ----------------------------------------
         # PANNELLO DIAGNOSTICA Z-SCORE
+        # Calcolato su tutti i 2000 giorni
         # ----------------------------------------
         st.subheader("🔬 Diagnostica Z-Score")
 
@@ -180,9 +174,9 @@ with col2:
         with col_d1:
             st.metric("Z-Score Attuale", f"{ultimo_zscore:.2f}")
         with col_d2:
-            st.metric("Massimo (periodo)", f"{data['zscore'].max():.2f}")
+            st.metric("Massimo (2000gg)", f"{data['zscore'].max():.2f}")
         with col_d3:
-            st.metric("Minimo (periodo)", f"{data['zscore'].min():.2f}")
+            st.metric("Minimo (2000gg)", f"{data['zscore'].min():.2f}")
         with col_d4:
             st.metric("Deviazione Std Z", f"{data['zscore'].std():.2f}")
 
@@ -203,6 +197,7 @@ with col2:
         st.divider()
         st.caption(f"Periodo analizzato: {giorni_analizzati} giorni | Segnali totali: {totale_segnali} | Frequenza: {segnali_per_100_giorni:.1f} ogni 100 giorni")
 
+        # Giudizio affidabile perché sempre su 2000 giorni
         if segnali_per_100_giorni > 8:
             st.warning(f"⚠️ Soglia ±{soglia} troppo bassa: {segnali_per_100_giorni:.1f} segnali ogni 100 giorni. Prova ad alzare la soglia.")
         elif segnali_per_100_giorni < 1:
@@ -211,7 +206,8 @@ with col2:
             st.success(f"✅ Soglia ±{soglia} nella norma: {segnali_per_100_giorni:.1f} segnali ogni 100 giorni.")
 
         # ----------------------------------------
-        # BACKTEST QUALITATIVO
+        # BACKTEST QUALITATIVO (ritorno alla media)
+        # Su tutti i 2000 giorni
         # ----------------------------------------
         st.subheader("🧪 Backtest Storico - Ritorno alla Media")
         st.caption("Per ogni segnale passato, misura il tempo reale impiegato dallo z-score a tornare in zona neutra.")
@@ -456,4 +452,3 @@ with col2:
 
         else:
             st.info("Nessuna azione richiesta. Le posizioni correnti sono allineate alla strategia.")
-
