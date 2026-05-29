@@ -82,10 +82,10 @@ with col2:
         # ----------------------------------------
         # SCARICO DATI
         # ----------------------------------------
-        qqq_raw = yf.download("QQQ", period="2000d", progress=False, auto_adjust=True)
-        spy_raw = yf.download("SPY", period="2000d", progress=False, auto_adjust=True)
-        nasdaq_raw = yf.download("^NDX", period="2000d", progress=False, auto_adjust=True)
-        sp500_raw = yf.download("^GSPC", period="2000d", progress=False, auto_adjust=True)
+        qqq_raw = yf.download("QQQ", period="100d", progress=False, auto_adjust=True)
+        spy_raw = yf.download("SPY", period="100d", progress=False, auto_adjust=True)
+        nasdaq_raw = yf.download("^NDX", period="100d", progress=False, auto_adjust=True)
+        sp500_raw = yf.download("^GSPC", period="100d", progress=False, auto_adjust=True)
 
         # DataFrame indici per Z-Score
         data = pd.DataFrame({
