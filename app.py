@@ -274,9 +274,10 @@ with col2:
         st.subheader("💰 Backtest Economico — Ultimi 6 Mesi")
         st.caption("Simula ogni trade con prezzi reali QQQ e SPY. Costo simulato: $1 per ordine ($4 totali per trade completo).")
 
-        QTY = 10
-        COSTO_ORDINE = 1.0
-        SOGLIA_USCITA_ECO = 0.5
+       # NUOVO - realistico per Alpaca con ETF liquidi
+QTY = 10
+SPREAD_PER_AZIONE = 0.01   # $0.01 di spread bid-ask per azione, tipico per QQQ e SPY
+COSTO_ORDINE = SPREAD_PER_AZIONE * QTY  # = $0.10 per ordine
 
         data_merged = data[["zscore"]].join(data_etf, how="inner").dropna()
         data_6m = data_merged.iloc[-126:].copy()
@@ -326,7 +327,7 @@ with col2:
                         pnl_qqq = (qqq_prices[i] - trade_aperto["qqq_ing"]) * QTY
                         pnl_spy = (trade_aperto["spy_ing"] - spy_prices[i]) * QTY
 
-                    costi = COSTO_ORDINE * 4
+                    costi = COSTO_ORDINE * 4  # 4 ordini per trade completo = $0.40
                     pnl_tot = pnl_qqq + pnl_spy - costi
                     giorni = i - trade_aperto["idx"]
 
@@ -356,7 +357,7 @@ with col2:
                 pnl_qqq = (qqq_prices[-1] - trade_aperto["qqq_ing"]) * QTY
                 pnl_spy = (trade_aperto["spy_ing"] - spy_prices[-1]) * QTY
 
-            costi = COSTO_ORDINE * 2
+            costi = COSTO_ORDINE * 2  # solo apertura = $0.20
             pnl_tot = pnl_qqq + pnl_spy - costi
             giorni = len(zscore_eco) - 1 - trade_aperto["idx"]
 
