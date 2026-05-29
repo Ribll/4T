@@ -82,29 +82,37 @@ with col2:
         # ----------------------------------------
         # SCARICO DATI
         # ----------------------------------------
-        nasdaq = yf.download("^NDX", period="100d", progress=False, auto_adjust=True)
-        sp500 = yf.download("^GSPC", period="100d", progress=False, auto_adjust=True)
+        qqq_raw = yf.download("QQQ", period="2000d", progress=False, auto_adjust=True)
+        spy_raw = yf.download("SPY", period="2000d", progress=False, auto_adjust=True)
+        nasdaq_raw = yf.download("^NDX", period="2000d", progress=False, auto_adjust=True)
+        sp500_raw = yf.download("^GSPC", period="2000d", progress=False, auto_adjust=True)
 
+        # DataFrame indici per Z-Score
         data = pd.DataFrame({
-            "nasdaq": nasdaq["Close"].iloc[:, 0] if isinstance(nasdaq["Close"], pd.DataFrame) else nasdaq["Close"],
-            "sp500": sp500["Close"].iloc[:, 0] if isinstance(sp500["Close"], pd.DataFrame) else sp500["Close"]
+            "nasdaq": nasdaq_raw["Close"].iloc[:, 0] if isinstance(nasdaq_raw["Close"], pd.DataFrame) else nasdaq_raw["Close"],
+            "sp500": sp500_raw["Close"].iloc[:, 0] if isinstance(sp500_raw["Close"], pd.DataFrame) else sp500_raw["Close"]
+        }).dropna()
+
+        # DataFrame ETF per backtest economico
+        data_etf = pd.DataFrame({
+            "qqq": qqq_raw["Close"].iloc[:, 0] if isinstance(qqq_raw["Close"], pd.DataFrame) else qqq_raw["Close"],
+            "spy": spy_raw["Close"].iloc[:, 0] if isinstance(spy_raw["Close"], pd.DataFrame) else spy_raw["Close"]
         }).dropna()
 
         # ----------------------------------------
-        # CALCOLO RENDIMENTI E SPREAD
+        # CALCOLO Z-SCORE
         # ----------------------------------------
         data["nasdaq_ret"] = data["nasdaq"].pct_change()
         data["sp500_ret"] = data["sp500"].pct_change()
         data["spread"] = data["nasdaq_ret"] - data["sp500_ret"]
         data = data.dropna()
 
-        # ----------------------------------------
-        # CALCOLO Z-SCORE
-        # ----------------------------------------
         window = 60
         data["mean"] = data["spread"].rolling(window).mean()
         data["std"] = data["spread"].rolling(window).std()
         data["zscore"] = (data["spread"] - data["mean"]) / data["std"]
+        data = data.dropna()
+
         ultimo_zscore = data["zscore"].iloc[-1]
 
         # ----------------------------------------
@@ -118,7 +126,53 @@ with col2:
         st.line_chart(data["zscore"])
 
         # ----------------------------------------
-        # PANNELLO DIAGNOSTICA
+        # CRUSCOTTO GRAFICO INDICI SOVRAPPOSTI
+        # ----------------------------------------
+        st.subheader("📉 Confronto Indici — NASDAQ vs S&P500")
+
+        giorni_grafico = st.slider(
+            "Numero di giorni da visualizzare",
+            min_value=5,
+            max_value=365,
+            value=30,
+            step=5,
+            help="Modifica quanti giorni di storia vuoi vedere nel grafico sovrapposto"
+        )
+
+        # Filtra i dati per il numero di giorni scelto
+        data_grafico = data[["nasdaq", "sp500"]].iloc[-giorni_grafico:].copy()
+
+        # Normalizza entrambi a 100 nel primo giorno del periodo scelto
+        # (solo per il grafico — non influenza lo Z-Score)
+        data_grafico["NASDAQ (norm)"] = (data_grafico["nasdaq"] / data_grafico["nasdaq"].iloc[0]) * 100
+        data_grafico["S&P500 (norm)"] = (data_grafico["sp500"] / data_grafico["sp500"].iloc[0]) * 100
+
+        st.line_chart(data_grafico[["NASDAQ (norm)", "S&P500 (norm)"]])
+        st.caption(
+            f"Entrambi gli indici normalizzati a 100 nel primo giorno del periodo ({data_grafico.index[0].strftime('%d/%m/%Y')}). "
+            f"Se NASDAQ è sopra S&P500 lo spread è positivo; se è sotto è negativo. "
+            f"Questo grafico mostra visivamente cosa sta misurando lo Z-Score."
+        )
+
+        # Mini-metriche di riepilogo del periodo visualizzato
+        perf_nasdaq = ((data_grafico["nasdaq"].iloc[-1] / data_grafico["nasdaq"].iloc[0]) - 1) * 100
+        perf_sp500 = ((data_grafico["sp500"].iloc[-1] / data_grafico["sp500"].iloc[0]) - 1) * 100
+        differenza = perf_nasdaq - perf_sp500
+
+        col_g1, col_g2, col_g3 = st.columns(3)
+        with col_g1:
+            st.metric(f"NASDAQ ultimi {giorni_grafico}gg", f"{perf_nasdaq:+.2f}%")
+        with col_g2:
+            st.metric(f"S&P500 ultimi {giorni_grafico}gg", f"{perf_sp500:+.2f}%")
+        with col_g3:
+            st.metric(
+                "Differenza di performance",
+                f"{differenza:+.2f}%",
+                delta="NASDAQ sovraperforma" if differenza > 0 else "S&P500 sovraperforma"
+            )
+
+        # ----------------------------------------
+        # PANNELLO DIAGNOSTICA Z-SCORE
         # ----------------------------------------
         st.subheader("🔬 Diagnostica Z-Score")
 
@@ -157,10 +211,10 @@ with col2:
             st.success(f"✅ Soglia ±{soglia} nella norma: {segnali_per_100_giorni:.1f} segnali ogni 100 giorni.")
 
         # ----------------------------------------
-        # BACKTEST SENZA LIMITE DI TEMPO
+        # BACKTEST QUALITATIVO
         # ----------------------------------------
-        st.subheader("🧪 Backtest Storico")
-        st.caption("Per ogni segnale passato, misura il tempo reale impiegato dallo z-score a tornare in zona neutra, senza limiti artificiali.")
+        st.subheader("🧪 Backtest Storico - Ritorno alla Media")
+        st.caption("Per ogni segnale passato, misura il tempo reale impiegato dallo z-score a tornare in zona neutra.")
 
         zscore_values = data["zscore"].values
         date_index = data.index
@@ -170,8 +224,6 @@ with col2:
         i = 0
         while i < len(zscore_values):
             z = zscore_values[i]
-
-            # Rilevazione segnale
             if z > soglia:
                 tipo = "SHORT (vendi QQQ)"
             elif z < -soglia:
@@ -180,7 +232,6 @@ with col2:
                 i += 1
                 continue
 
-            # Cerca uscita senza limite di tempo
             uscita_trovata = False
             giorni_impiegati = None
             for j in range(1, len(zscore_values) - i):
@@ -197,86 +248,190 @@ with col2:
                 "Giorni al ritorno": giorni_impiegati if uscita_trovata else "ancora aperto"
             })
 
-            # Salta al giorno dopo l'uscita per evitare duplicati
             i += giorni_impiegati if uscita_trovata else len(zscore_values) - i
 
-        # ----------------------------------------
-        # RIEPILOGO BACKTEST
-        # ----------------------------------------
         if risultati:
-            df_risultati = pd.DataFrame(risultati)
-
-            tornati = (df_risultati["Esito"] == "✅ Tornato").sum()
-            ancora_aperti = (df_risultati["Esito"] == "⏳ Non ancora tornato").sum()
-            totale_trade = len(df_risultati)
-
-            # Durata media calcolata dai dati reali
-            durate_reali = df_risultati[df_risultati["Esito"] == "✅ Tornato"]["Giorni al ritorno"]
+            df_qual = pd.DataFrame(risultati)
+            tornati = (df_qual["Esito"] == "✅ Tornato").sum()
+            totale_q = len(df_qual)
+            durate_reali = df_qual[df_qual["Esito"] == "✅ Tornato"]["Giorni al ritorno"]
             durata_media = durate_reali.mean() if len(durate_reali) > 0 else 0
             durata_mediana = durate_reali.median() if len(durate_reali) > 0 else 0
             durata_massima = durate_reali.max() if len(durate_reali) > 0 else 0
 
-            col_b1, col_b2, col_b3, col_b4 = st.columns(4)
-            with col_b1:
-                st.metric("Trade Totali", totale_trade)
-            with col_b2:
-                st.metric("✅ Tornati in zona neutra", tornati)
-            with col_b3:
-                st.metric("⏳ Ancora aperti", ancora_aperti)
-            with col_b4:
-                tasso = (tornati / totale_trade * 100) if totale_trade > 0 else 0
-                st.metric("% Risolti", f"{tasso:.1f}%")
-
-            st.divider()
-
-            # Le tre metriche temporali chiave
             col_t1, col_t2, col_t3 = st.columns(3)
             with col_t1:
-                st.metric(
-                    "⏱️ Durata Media",
-                    f"{durata_media:.1f} giorni",
-                    help="Media aritmetica dei giorni di ritorno. Sensibile ai casi estremi."
-                )
+                st.metric("⏱️ Durata Media", f"{durata_media:.1f} giorni")
             with col_t2:
-                st.metric(
-                    "⏱️ Durata Mediana",
-                    f"{durata_mediana:.1f} giorni",
-                    help="Il valore centrale: metà dei trade si chiude prima, metà dopo. Più robusta della media."
-                )
+                st.metric("⏱️ Durata Mediana", f"{durata_mediana:.1f} giorni")
             with col_t3:
-                st.metric(
-                    "⏱️ Caso Peggiore",
-                    f"{durata_massima:.0f} giorni",
-                    help="Il trade più lento mai visto storicamente. Utile per sapere il rischio massimo di attesa."
-                )
+                st.metric("⏱️ Caso Peggiore", f"{durata_massima:.0f} giorni")
 
-            # Spiegazione delle metriche
-            st.info(
-                f"📖 **Come leggere questi numeri:** "
-                f"Storicamente, metà dei segnali si è risolta entro **{durata_mediana:.0f} giorni**. "
-                f"In media ci sono voluti **{durata_media:.1f} giorni**. "
-                f"Il caso più lento nella storia analizzata ha impiegato **{durata_massima:.0f} giorni**. "
-                f"Questi numeri emergono dai dati reali, non da parametri arbitrari."
-            )
+            st.info(f"📖 Storicamente, metà dei segnali si è risolta entro **{durata_mediana:.0f} giorni**. Media: **{durata_media:.1f} giorni**. Caso più lento: **{durata_massima:.0f} giorni**.")
 
-            # Giudizio sulla strategia
-            st.divider()
-            if tasso >= 90:
-                st.success(f"✅ Lo z-score è tornato in zona neutra nel {tasso:.1f}% dei casi storici. Strategia molto affidabile.")
-            elif tasso >= 70:
-                st.warning(f"⚠️ Lo z-score è tornato in zona neutra nel {tasso:.1f}% dei casi. Strategia discreta, ma con margine di rischio.")
-            else:
-                st.error(f"🔴 Lo z-score è tornato in zona neutra solo nel {tasso:.1f}% dei casi. Valuta di cambiare soglia o approccio.")
-
-            # Tabella dettaglio trade
             with st.expander("📋 Dettaglio tutti i trade storici"):
-                st.dataframe(df_risultati, use_container_width=True)
-
-        else:
-            st.info("Nessun segnale trovato nel periodo analizzato con la soglia attuale.")
+                st.dataframe(df_qual, use_container_width=True)
 
         # ----------------------------------------
-        # LOGICA ORDINI
+        # BACKTEST ECONOMICO - ULTIMI 6 MESI
+        # ----------------------------------------
+        st.subheader("💰 Backtest Economico — Ultimi 6 Mesi")
+        st.caption("Simula ogni trade con prezzi reali QQQ e SPY. Costo simulato: $1 per ordine ($4 totali per trade completo).")
+
+        QTY = 10
+        COSTO_ORDINE = 1.0
+        SOGLIA_USCITA_ECO = 0.5
+
+        data_merged = data[["zscore"]].join(data_etf, how="inner").dropna()
+        data_6m = data_merged.iloc[-126:].copy()
+
+        zscore_eco = data_6m["zscore"].values
+        qqq_prices = data_6m["qqq"].values
+        spy_prices = data_6m["spy"].values
+        date_eco = data_6m.index
+
+        trades = []
+        i = 0
+        in_posizione = False
+        trade_aperto = {}
+
+        while i < len(zscore_eco):
+            z = zscore_eco[i]
+
+            if not in_posizione:
+                if z > soglia:
+                    trade_aperto = {
+                        "data_ingresso": date_eco[i].strftime("%Y-%m-%d"),
+                        "tipo": "SHORT SPREAD",
+                        "zscore_ing": round(z, 2),
+                        "qqq_ing": qqq_prices[i],
+                        "spy_ing": spy_prices[i],
+                        "dir_qqq": "SELL",
+                        "idx": i
+                    }
+                    in_posizione = True
+                elif z < -soglia:
+                    trade_aperto = {
+                        "data_ingresso": date_eco[i].strftime("%Y-%m-%d"),
+                        "tipo": "LONG SPREAD",
+                        "zscore_ing": round(z, 2),
+                        "qqq_ing": qqq_prices[i],
+                        "spy_ing": spy_prices[i],
+                        "dir_qqq": "BUY",
+                        "idx": i
+                    }
+                    in_posizione = True
+            else:
+                if abs(z) < SOGLIA_USCITA_ECO:
+                    if trade_aperto["dir_qqq"] == "SELL":
+                        pnl_qqq = (trade_aperto["qqq_ing"] - qqq_prices[i]) * QTY
+                        pnl_spy = (spy_prices[i] - trade_aperto["spy_ing"]) * QTY
+                    else:
+                        pnl_qqq = (qqq_prices[i] - trade_aperto["qqq_ing"]) * QTY
+                        pnl_spy = (trade_aperto["spy_ing"] - spy_prices[i]) * QTY
+
+                    costi = COSTO_ORDINE * 4
+                    pnl_tot = pnl_qqq + pnl_spy - costi
+                    giorni = i - trade_aperto["idx"]
+
+                    trades.append({
+                        "Data ingresso": trade_aperto["data_ingresso"],
+                        "Data uscita": date_eco[i].strftime("%Y-%m-%d"),
+                        "Tipo": trade_aperto["tipo"],
+                        "Z entrata": trade_aperto["zscore_ing"],
+                        "Z uscita": round(z, 2),
+                        "Giorni": giorni,
+                        "P&L QQQ ($)": round(pnl_qqq, 2),
+                        "P&L SPY ($)": round(pnl_spy, 2),
+                        "Costi ($)": round(-costi, 2),
+                        "P&L Totale ($)": round(pnl_tot, 2),
+                        "Esito": "✅ Profitto" if pnl_tot > 0 else "❌ Perdita"
+                    })
+                    in_posizione = False
+                    trade_aperto = {}
+
+            i += 1
+
+        if in_posizione:
+            if trade_aperto["dir_qqq"] == "SELL":
+                pnl_qqq = (trade_aperto["qqq_ing"] - qqq_prices[-1]) * QTY
+                pnl_spy = (spy_prices[-1] - trade_aperto["spy_ing"]) * QTY
+            else:
+                pnl_qqq = (qqq_prices[-1] - trade_aperto["qqq_ing"]) * QTY
+                pnl_spy = (trade_aperto["spy_ing"] - spy_prices[-1]) * QTY
+
+            costi = COSTO_ORDINE * 2
+            pnl_tot = pnl_qqq + pnl_spy - costi
+            giorni = len(zscore_eco) - 1 - trade_aperto["idx"]
+
+            trades.append({
+                "Data ingresso": trade_aperto["data_ingresso"],
+                "Data uscita": f"{date_eco[-1].strftime('%Y-%m-%d')} ⏳ aperto",
+                "Tipo": trade_aperto["tipo"],
+                "Z entrata": trade_aperto["zscore_ing"],
+                "Z uscita": round(zscore_eco[-1], 2),
+                "Giorni": giorni,
+                "P&L QQQ ($)": round(pnl_qqq, 2),
+                "P&L SPY ($)": round(pnl_spy, 2),
+                "Costi ($)": round(-costi, 2),
+                "P&L Totale ($)": round(pnl_tot, 2),
+                "Esito": "⏳ Ancora aperto"
+            })
+
+        if trades:
+            df_eco = pd.DataFrame(trades)
+            df_chiusi = df_eco[~df_eco["Esito"].str.contains("aperto")]
+
+            pnl_totale = df_eco["P&L Totale ($)"].sum()
+            vincenti = (df_chiusi["P&L Totale ($)"] > 0).sum()
+            perdenti = (df_chiusi["P&L Totale ($)"] < 0).sum()
+            totale_chiusi = len(df_chiusi)
+            tasso_eco = (vincenti / totale_chiusi * 100) if totale_chiusi > 0 else 0
+            durata_media_eco = df_chiusi["Giorni"].mean() if totale_chiusi > 0 else 0
+            costi_totali = df_eco["Costi ($)"].sum()
+
+            col_e1, col_e2, col_e3, col_e4 = st.columns(4)
+            with col_e1:
+                st.metric("💵 P&L Totale", f"${pnl_totale:+.2f}", delta="profitto" if pnl_totale >= 0 else "perdita")
+            with col_e2:
+                st.metric("🎯 Tasso Successo", f"{tasso_eco:.1f}%")
+            with col_e3:
+                st.metric("📅 Durata Media Trade", f"{durata_media_eco:.1f} giorni")
+            with col_e4:
+                st.metric("💸 Costi Totali", f"${costi_totali:.2f}")
+
+            col_f1, col_f2, col_f3 = st.columns(3)
+            with col_f1:
+                st.metric("Trade totali", len(df_eco))
+            with col_f2:
+                st.metric("✅ Profittevoli", vincenti)
+            with col_f3:
+                st.metric("❌ In perdita", perdenti)
+
+            st.divider()
+
+            if pnl_totale > 0 and tasso_eco >= 60:
+                st.success(f"✅ Il bot avrebbe guadagnato **${pnl_totale:+.2f}** negli ultimi 6 mesi con un tasso di successo del {tasso_eco:.1f}%. Strategia solida su questo periodo.")
+            elif pnl_totale > 0 and tasso_eco < 60:
+                st.warning(f"⚠️ Il bot avrebbe guadagnato **${pnl_totale:+.2f}** ma con solo il {tasso_eco:.1f}% di trade vincenti. Il guadagno dipende da pochi trade molto profittevoli — strategia instabile.")
+            elif pnl_totale <= 0 and tasso_eco >= 60:
+                st.warning(f"⚠️ Il bot ha il {tasso_eco:.1f}% di trade vincenti ma il P&L totale è **${pnl_totale:+.2f}**. I trade perdenti pesano più di quelli vincenti.")
+            else:
+                st.error(f"🔴 Il bot avrebbe perso **${pnl_totale:+.2f}** negli ultimi 6 mesi con solo il {tasso_eco:.1f}% di successo. Valuta di cambiare soglia prima di andare in produzione.")
+
+            df_eco_plot = df_eco.copy()
+            df_eco_plot["P&L Cumulativo ($)"] = df_eco_plot["P&L Totale ($)"].cumsum()
+            st.line_chart(df_eco_plot.set_index("Data ingresso")["P&L Cumulativo ($)"])
+            st.caption("P&L cumulativo nel tempo. Una linea che sale = strategia profittevole nel periodo.")
+
+            with st.expander("📋 Dettaglio ogni singolo trade con prezzi reali"):
+                st.dataframe(df_eco, use_container_width=True)
+
+        else:
+            st.info("Nessun segnale rilevato negli ultimi 6 mesi con la soglia attuale. Prova ad abbassare la soglia.")
+
+        # ----------------------------------------
+        # LOGICA ORDINI LIVE
         # ----------------------------------------
         ha_nasdaq = any(p.symbol == "QQQ" for p in posizioni)
 
@@ -301,3 +456,4 @@ with col2:
 
         else:
             st.info("Nessuna azione richiesta. Le posizioni correnti sono allineate alla strategia.")
+
