@@ -136,7 +136,6 @@ with col2:
         GIORNI_GRAFICO = 100
         data_grafico = data[["nasdaq", "sp500"]].iloc[-GIORNI_GRAFICO:].copy()
 
-        # Normalizza a 100 nel primo giorno del periodo
         data_grafico["NASDAQ (norm)"] = (data_grafico["nasdaq"] / data_grafico["nasdaq"].iloc[0]) * 100
         data_grafico["S&P500 (norm)"] = (data_grafico["sp500"] / data_grafico["sp500"].iloc[0]) * 100
 
@@ -147,7 +146,6 @@ with col2:
             f"quando è sotto è negativo (Z-Score tende al ribasso)."
         )
 
-        # Mini-metriche del periodo
         perf_nasdaq = ((data_grafico["nasdaq"].iloc[-1] / data_grafico["nasdaq"].iloc[0]) - 1) * 100
         perf_sp500 = ((data_grafico["sp500"].iloc[-1] / data_grafico["sp500"].iloc[0]) - 1) * 100
         differenza = perf_nasdaq - perf_sp500
@@ -197,7 +195,6 @@ with col2:
         st.divider()
         st.caption(f"Periodo analizzato: {giorni_analizzati} giorni | Segnali totali: {totale_segnali} | Frequenza: {segnali_per_100_giorni:.1f} ogni 100 giorni")
 
-        # Giudizio affidabile perché sempre su 2000 giorni
         if segnali_per_100_giorni > 8:
             st.warning(f"⚠️ Soglia ±{soglia} troppo bassa: {segnali_per_100_giorni:.1f} segnali ogni 100 giorni. Prova ad alzare la soglia.")
         elif segnali_per_100_giorni < 1:
@@ -263,7 +260,10 @@ with col2:
             with col_t3:
                 st.metric("⏱️ Caso Peggiore", f"{durata_massima:.0f} giorni")
 
-            st.info(f"📖 Storicamente, metà dei segnali si è risolta entro **{durata_mediana:.0f} giorni**. Media: **{durata_media:.1f} giorni**. Caso più lento: **{durata_massima:.0f} giorni**.")
+            st.info(
+                f"📖 Storicamente, metà dei segnali si è risolta entro **{durata_mediana:.0f} giorni**. "
+                f"Media: **{durata_media:.1f} giorni**. Caso più lento: **{durata_massima:.0f} giorni**."
+            )
 
             with st.expander("📋 Dettaglio tutti i trade storici"):
                 st.dataframe(df_qual, use_container_width=True)
@@ -272,12 +272,17 @@ with col2:
         # BACKTEST ECONOMICO - ULTIMI 6 MESI
         # ----------------------------------------
         st.subheader("💰 Backtest Economico — Ultimi 6 Mesi")
-        st.caption("Simula ogni trade con prezzi reali QQQ e SPY. Costo simulato: $1 per ordine ($4 totali per trade completo).")
+        st.caption(
+            "Simula ogni trade con prezzi reali QQQ e SPY. "
+            "Commissioni Alpaca: $0. Costo simulato: solo spread bid-ask ($0.01 per azione, "
+            "tipico per ETF ad alta liquidità come QQQ e SPY). Totale per trade completo: ~$0.40."
+        )
 
-       # NUOVO - realistico per Alpaca con ETF liquidi
+        # --- Parametri costi realistici Alpaca ---
         QTY = 10
-        SPREAD_PER_AZIONE = 0.01   # $0.01 di spread bid-ask per azione, tipico per QQQ e SPY
-        COSTO_ORDINE = SPREAD_PER_AZIONE * QTY  # = $0.10 per ordine
+        SPREAD_PER_AZIONE = 0.01        # $0.01 bid-ask spread per azione, tipico per QQQ/SPY
+        COSTO_ORDINE = SPREAD_PER_AZIONE * QTY  # $0.10 per ordine
+        SOGLIA_USCITA_ECO = 0.5         # Z-Score sotto cui si chiude il trade
 
         data_merged = data[["zscore"]].join(data_etf, how="inner").dropna()
         data_6m = data_merged.iloc[-126:].copy()
@@ -327,7 +332,8 @@ with col2:
                         pnl_qqq = (qqq_prices[i] - trade_aperto["qqq_ing"]) * QTY
                         pnl_spy = (trade_aperto["spy_ing"] - spy_prices[i]) * QTY
 
-                    costi = COSTO_ORDINE * 4  # 4 ordini per trade completo = $0.40
+                    # 4 ordini per trade completo (2 apertura + 2 chiusura)
+                    costi = COSTO_ORDINE * 4
                     pnl_tot = pnl_qqq + pnl_spy - costi
                     giorni = i - trade_aperto["idx"]
 
@@ -349,6 +355,7 @@ with col2:
 
             i += 1
 
+        # Posizione ancora aperta alla fine del periodo
         if in_posizione:
             if trade_aperto["dir_qqq"] == "SELL":
                 pnl_qqq = (trade_aperto["qqq_ing"] - qqq_prices[-1]) * QTY
@@ -357,7 +364,8 @@ with col2:
                 pnl_qqq = (qqq_prices[-1] - trade_aperto["qqq_ing"]) * QTY
                 pnl_spy = (trade_aperto["spy_ing"] - spy_prices[-1]) * QTY
 
-            costi = COSTO_ORDINE * 2  # solo apertura = $0.20
+            # Solo 2 ordini di apertura, chiusura non ancora avvenuta
+            costi = COSTO_ORDINE * 2
             pnl_tot = pnl_qqq + pnl_spy - costi
             giorni = len(zscore_eco) - 1 - trade_aperto["idx"]
 
@@ -389,7 +397,11 @@ with col2:
 
             col_e1, col_e2, col_e3, col_e4 = st.columns(4)
             with col_e1:
-                st.metric("💵 P&L Totale", f"${pnl_totale:+.2f}", delta="profitto" if pnl_totale >= 0 else "perdita")
+                st.metric(
+                    "💵 P&L Totale",
+                    f"${pnl_totale:+.2f}",
+                    delta="profitto" if pnl_totale >= 0 else "perdita"
+                )
             with col_e2:
                 st.metric("🎯 Tasso Successo", f"{tasso_eco:.1f}%")
             with col_e3:
@@ -408,24 +420,43 @@ with col2:
             st.divider()
 
             if pnl_totale > 0 and tasso_eco >= 60:
-                st.success(f"✅ Il bot avrebbe guadagnato **${pnl_totale:+.2f}** negli ultimi 6 mesi con un tasso di successo del {tasso_eco:.1f}%. Strategia solida su questo periodo.")
+                st.success(
+                    f"✅ Il bot avrebbe guadagnato **${pnl_totale:+.2f}** negli ultimi 6 mesi "
+                    f"con un tasso di successo del {tasso_eco:.1f}%. Strategia solida su questo periodo."
+                )
             elif pnl_totale > 0 and tasso_eco < 60:
-                st.warning(f"⚠️ Il bot avrebbe guadagnato **${pnl_totale:+.2f}** ma con solo il {tasso_eco:.1f}% di trade vincenti. Il guadagno dipende da pochi trade molto profittevoli — strategia instabile.")
+                st.warning(
+                    f"⚠️ Il bot avrebbe guadagnato **${pnl_totale:+.2f}** ma con solo il "
+                    f"{tasso_eco:.1f}% di trade vincenti. Il guadagno dipende da pochi trade "
+                    f"molto profittevoli — strategia instabile."
+                )
             elif pnl_totale <= 0 and tasso_eco >= 60:
-                st.warning(f"⚠️ Il bot ha il {tasso_eco:.1f}% di trade vincenti ma il P&L totale è **${pnl_totale:+.2f}**. I trade perdenti pesano più di quelli vincenti.")
+                st.warning(
+                    f"⚠️ Il bot ha il {tasso_eco:.1f}% di trade vincenti ma il P&L totale è "
+                    f"**${pnl_totale:+.2f}**. I trade perdenti pesano più di quelli vincenti."
+                )
             else:
-                st.error(f"🔴 Il bot avrebbe perso **${pnl_totale:+.2f}** negli ultimi 6 mesi con solo il {tasso_eco:.1f}% di successo. Valuta di cambiare soglia prima di andare in produzione.")
+                st.error(
+                    f"🔴 Il bot avrebbe perso **${pnl_totale:+.2f}** negli ultimi 6 mesi con "
+                    f"solo il {tasso_eco:.1f}% di successo. Valuta di cambiare soglia prima "
+                    f"di andare in produzione."
+                )
 
             df_eco_plot = df_eco.copy()
             df_eco_plot["P&L Cumulativo ($)"] = df_eco_plot["P&L Totale ($)"].cumsum()
             st.line_chart(df_eco_plot.set_index("Data ingresso")["P&L Cumulativo ($)"])
-            st.caption("P&L cumulativo nel tempo. Una linea che sale = strategia profittevole nel periodo.")
+            st.caption(
+                "P&L cumulativo nel tempo. Una linea che sale = strategia profittevole nel periodo."
+            )
 
             with st.expander("📋 Dettaglio ogni singolo trade con prezzi reali"):
                 st.dataframe(df_eco, use_container_width=True)
 
         else:
-            st.info("Nessun segnale rilevato negli ultimi 6 mesi con la soglia attuale. Prova ad abbassare la soglia.")
+            st.info(
+                "Nessun segnale rilevato negli ultimi 6 mesi con la soglia attuale. "
+                "Prova ad abbassare la soglia."
+            )
 
         # ----------------------------------------
         # LOGICA ORDINI LIVE
@@ -436,14 +467,22 @@ with col2:
 
         if ultimo_zscore > soglia and not ha_nasdaq:
             st.warning("Esecuzione: Segnale SHORT SPREAD. Invio ordini...")
-            trading_client.submit_order(MarketOrderRequest(symbol="SPY", qty=10, side=OrderSide.BUY, time_in_force=TimeInForce.DAY))
-            trading_client.submit_order(MarketOrderRequest(symbol="QQQ", qty=10, side=OrderSide.SELL, time_in_force=TimeInForce.DAY))
+            trading_client.submit_order(MarketOrderRequest(
+                symbol="SPY", qty=10, side=OrderSide.BUY, time_in_force=TimeInForce.DAY
+            ))
+            trading_client.submit_order(MarketOrderRequest(
+                symbol="QQQ", qty=10, side=OrderSide.SELL, time_in_force=TimeInForce.DAY
+            ))
             st.success("Ordini inviati con successo!")
 
         elif ultimo_zscore < -soglia and not ha_nasdaq:
             st.warning("Esecuzione: Segnale LONG SPREAD. Invio ordini...")
-            trading_client.submit_order(MarketOrderRequest(symbol="QQQ", qty=10, side=OrderSide.BUY, time_in_force=TimeInForce.DAY))
-            trading_client.submit_order(MarketOrderRequest(symbol="SPY", qty=10, side=OrderSide.SELL, time_in_force=TimeInForce.DAY))
+            trading_client.submit_order(MarketOrderRequest(
+                symbol="QQQ", qty=10, side=OrderSide.BUY, time_in_force=TimeInForce.DAY
+            ))
+            trading_client.submit_order(MarketOrderRequest(
+                symbol="SPY", qty=10, side=OrderSide.SELL, time_in_force=TimeInForce.DAY
+            ))
             st.success("Ordini inviati con successo!")
 
         elif abs(ultimo_zscore) < 0.5 and ha_nasdaq:
@@ -452,4 +491,7 @@ with col2:
             st.success("Tutte le posizioni sono state chiuse.")
 
         else:
-            st.info("Nessuna azione richiesta. Le posizioni correnti sono allineate alla strategia.")
+            st.info(
+                "Nessuna azione richiesta. Le posizioni correnti sono allineate alla strategia."
+            )
+
