@@ -275,9 +275,9 @@ with col2:
         st.caption("Simula ogni trade con prezzi reali QQQ e SPY. Costo simulato: $1 per ordine ($4 totali per trade completo).")
 
        # NUOVO - realistico per Alpaca con ETF liquidi
-QTY = 10
-SPREAD_PER_AZIONE = 0.01   # $0.01 di spread bid-ask per azione, tipico per QQQ e SPY
-COSTO_ORDINE = SPREAD_PER_AZIONE * QTY  # = $0.10 per ordine
+        QTY = 10
+        SPREAD_PER_AZIONE = 0.01   # $0.01 di spread bid-ask per azione, tipico per QQQ e SPY
+        COSTO_ORDINE = SPREAD_PER_AZIONE * QTY  # = $0.10 per ordine
 
         data_merged = data[["zscore"]].join(data_etf, how="inner").dropna()
         data_6m = data_merged.iloc[-126:].copy()
